@@ -73,7 +73,7 @@ camera.position.set(0, 6, 28);
 
 const controls = new THREE.OrbitControls(camera, renderer.domElement);
 controls.enableDamping=true; controls.dampingFactor=0.06; controls.minDistance=4; controls.maxDistance=120;
-renderer.domElement.addEventListener('dblclick', ()=>{camera.position.set(0,6,28); controls.target.set(0,0,0)});
+renderer.domElement.addEventListener('dblclick', ()=>{camera.position.set(0,6,28); controls.target.set(0,0,0); currentFocus=-1; focusOffset.set(0,0,0);});
 
 // Starfield
 const stars = new THREE.Points(
@@ -183,11 +183,13 @@ window.addEventListener('keydown',(e)=>{
 
 // Focus logic
 let currentFocus=-1; let focusT=0; const focusFrom={pos:new THREE.Vector3(), target:new THREE.Vector3()}; const focusTo={pos:new THREE.Vector3(), target:new THREE.Vector3()};
+const focusOffset=new THREE.Vector3();
 function planetPosition(b){ const ang = tSim / Math.max(0.0001, b.year*0.7) * Math.PI*2; return new THREE.Vector3(Math.cos(ang)*b.dist, 0, Math.sin(ang)*b.dist); }
-function focus(i){ currentFocus=i; focusT=0; focusFrom.pos.copy(camera.position); focusFrom.target.copy(controls.target);
-  const b=bodies[i]; const p=planetPosition(b); focusTo.target.copy(p);
+function focus(i){ const b=bodies[i]; if(!b) return; currentFocus=i; focusT=0; focusFrom.pos.copy(camera.position); focusFrom.target.copy(controls.target);
+  const p=planetPosition(b); focusTo.target.copy(p);
   const dist = THREE.MathUtils.clamp(b.dist*0.8 + Math.log(1+b.r)*2.0, 5, 70);
   focusTo.pos.copy(p).add(new THREE.Vector3(dist*0.8, dist*0.32, dist*0.8));
+  focusOffset.copy(focusTo.pos).sub(focusTo.target);
 }
 
 function updateToggles(){ orbits.visible=togOrbits.checked; bodies.forEach(b=>{ const m=meshById.get(b.id); if(m) m.userData.label.element.style.display = togLabels.checked?'block':'none'; }); }
@@ -202,11 +204,47 @@ onResize();
 const fpsEl=document.getElementById('fps'); let last=performance.now(), acc=0, cnt=0, lastFPS=performance.now();
 function animate(){
   requestAnimationFrame(animate);
-  const now=performance.now(); const dt=Math.min(0.05, (now-last)/1000); last=now;
+  const now=performance.now();
+  const rawDt=(now-last)/1000;
+  const dt=Math.max(1e-3, Math.min(0.05, rawDt));
+  last=now;
   if(playing) tSim += dt*speed;
 
   for(const b of bodies){ const m=meshById.get(b.id); const p=planetPosition(b); m.position.copy(p); m.rotation.y += 0.5*dt; }
   if(moon && earth){ moon.rotation.y += 0.2*dt; moon.position.x = 1.2*Math.cos(tSim*2.5); moon.position.z = 1.2*Math.sin(tSim*2.5); }
+
+  if(currentFocus>=0){
+    const body=bodies[currentFocus];
+    const m=meshById.get(body.id);
+    if(m){
+      const p=planetPosition(body);
+      focusTo.target.copy(p);
+      if(focusOffset.lengthSq()===0){
+        focusOffset.copy(focusTo.pos).sub(focusTo.target);
+      }
+      focusTo.pos.copy(p).add(focusOffset);
+
+      if(focusT<1){
+        focusT=Math.min(1, focusT+dt*1.5);
+        const ease=1-Math.pow(1-focusT,3);
+        camera.position.lerpVectors(focusFrom.pos, focusTo.pos, ease);
+        controls.target.lerpVectors(focusFrom.target, focusTo.target, ease);
+        if(focusT>=1-1e-3){
+          camera.position.copy(focusTo.pos);
+          controls.target.copy(focusTo.target);
+          focusFrom.pos.copy(focusTo.pos);
+          focusFrom.target.copy(focusTo.target);
+        }
+      }else{
+        camera.position.lerp(focusTo.pos, Math.min(1, dt*3));
+        controls.target.lerp(focusTo.target, Math.min(1, dt*3));
+        focusFrom.pos.copy(camera.position);
+        focusFrom.target.copy(controls.target);
+      }
+    }
+  }else{
+    focusOffset.set(0,0,0);
+  }
 
   controls.update();
   renderer.render(scene,camera);
