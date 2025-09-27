@@ -1,62 +1,524 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sistema Solar 3D — Versión Online (Canvas)</title>
-  <style>
-    :root{--bg:#070914;--panel:#0d1224d0;--text:#e9eef7;--muted:#9fb0cf;--ring:#89a0ff55}
-    *{box-sizing:border-box}
-    html,body{height:100%;margin:0;background:radial-gradient(1000px 600px at 70% 30%,#0d1329 0%,#080b18 60%,#05060d 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
-    #app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) 320px}
-    #ui{padding:14px;border-left:1px solid #1a2246;background:linear-gradient(180deg,var(--panel),#0b0f20);backdrop-filter:blur(6px) saturate(1.1);overflow:auto}
-    #scene{position:absolute;inset:0}
-    #scene canvas{display:block;width:100%;height:100%}
-    #labels{position:absolute;inset:0;pointer-events:none}
-    .label{position:absolute;color:#cfe3ff;font-size:12px;text-shadow:0 1px 2px #000;white-space:nowrap;transform:translate(-50%, -130%)}
-    .btn{border:1px solid #24305d;background:#10162b;color:var(--text);padding:8px 10px;border-radius:12px;font-weight:600;cursor:pointer}
-    .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:10px 0}
-    .val{min-width:48px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
-    .list{display:grid;gap:6px}
-    .card{background:#0b1022;border:1px solid #1a2246;border-radius:12px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;transition:border-color 0.2s}
-    .card.focused{border-color:#2f4dff}
-    .dot{width:10px;height:10px;border-radius:50%}
-    .meta{font-size:11px;color:var(--muted)}
-    #hud{position:absolute;left:12px;bottom:12px;color:#9fb0cf;font-size:12px}
-    #fps{position:absolute;right:12px;bottom:12px;background:#0b1022;border:1px solid #1a2246;border-radius:10px;padding:6px 8px;font-variant-numeric:tabular-nums;font-size:12px}
-    canvas:focus{outline:2px solid #2f4dff}
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sistema Solar 3D — Offline (HTML+CSS+JS único)</title>
+<style>
+  :root{
+    --bg:#070914;--panel:#0f1324cc;--text:#e9eef7;--muted:#9fb0cf;--accent:#67b5ff;
+    --ok:#4ade80;--warn:#f59e0b;--danger:#ef4444;--ring:#89a0ff55;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:radial-gradient(1200px 600px at 70% 30%,#0d1329 0%,#080b18 60%,#05060d 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+  #app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:0}
+  #gl{display:block;width:100%;height:100%;background:transparent}
+  #overlay{position:absolute;inset:0;pointer-events:none}
+  #ui{height:100%;backdrop-filter:saturate(1.1) blur(6px);background:linear-gradient(180deg,var(--panel),#0b0f20f5);
+       border-left:1px solid #1a2142;padding:16px 14px 18px;overflow:auto}
+  #ui h1{font-size:18px;margin:0 0 8px;letter-spacing:.4px}
+  #ui .sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+  .row{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;margin:8px 0}
+  .row .val{min-width:48px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .btn{pointer-events:auto;user-select:none;border:1px solid #24305d;background:#11162ccc;color:var(--text);padding:8px 10px;border-radius:12px;font-weight:600;cursor:pointer;transition:.2s}
+  .btn:hover{filter:brightness(1.15)}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:#0e1428a6}
+  .krow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 2px}
+  label.switch{display:flex;align-items:center;gap:10px;cursor:pointer;margin:8px 0}
+  label.switch input{appearance:none;width:38px;height:22px;border-radius:999px;background:#26315c;position:relative;outline:none;transition:.2s}
+  label.switch input:checked{background:#274fb3}
+  label.switch input:before{content:"";position:absolute;inset:3px auto 3px 3px;width:16px;border-radius:999px;background:#dbe7ff;transition:.2s}
+  label.switch input:checked:before{left:auto;right:3px}
+
+  .list{display:grid;gap:6px;margin-top:6px}
+  .card{background:#0b1022d0;border:1px solid #1a2246;border-radius:14px;padding:10px 12px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+  .dot{width:10px;height:10px;border-radius:50%}
+  .name{font-weight:700}
+  .meta{font-size:11px;color:var(--muted)}
+  .card .goto{font-size:12px;opacity:.9}
+
+  .help{position:absolute;left:12px;bottom:12px;color:var(--muted);font-size:12px;pointer-events:none}
+  .fps{position:absolute;right:12px;bottom:12px;background:#0b1022d0;border:1px solid #1a2246;border-radius:10px;padding:6px 8px;font-variant-numeric:tabular-nums;font-size:12px}
+
+  .toast{position:absolute;top:12px;left:12px;background:#0b1022d0;border:1px solid #1a2246;border-radius:10px;padding:8px 12px;color:#c4d3ff;font-size:13px;display:none}
+
+  /* Orbits canvas */
+  #orbits{position:absolute;inset:0;pointer-events:none}
+
+  /* High contrast & reduce motion */
+  @media (prefers-contrast: more){:root{--panel:#0d1224f2;--text:#ffffff}}
+  @media (prefers-reduced-motion: reduce){.anim-slow{transition:none}}
+</style>
 </head>
 <body>
 <div id="app">
   <div style="position:relative">
-    <div id="scene"></div>
-    <div id="labels"></div>
-    <div id="hud">Arrastra para orbitar · Rueda para zoom · Doble click para reset · Teclas: 1–9, F (enfocar)</div>
-    <div id="fps">FPS: —</div>
+    <canvas id="gl"></canvas>
+    <canvas id="orbits"></canvas>
+    <div id="overlay"></div>
+    <div class="help">Arrastra para orbitar · Rueda para zoom · Doble click para reset · Teclas: 1–9 seleccionar, F enfocar, O órbitas, L etiquetas</div>
+    <div class="fps" id="fps">FPS: —</div>
+    <div class="toast" id="toast"></div>
   </div>
-  <aside id="ui" aria-label="Panel de control">
-    <h1 style="margin:0 0 6px;font-size:18px">Sistema Solar 3D (Canvas)</h1>
-    <div class="meta" style="margin-bottom:8px">Versión sin dependencias externas — funciona sin conexión</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 6px">
-      <button id="play" class="btn">⏵︎ Reproducir</button>
-      <button id="resetT" class="btn">⟲ Tiempo</button>
-      <button id="photo" class="btn">📷 Modo foto</button>
+  <aside id="ui" aria-label="Panel de control del Sistema Solar">
+    <h1>Sistema Solar 3D</h1>
+    <div class="sub">HTML + CSS + JS (WebGL2) — Funciona offline</div>
+
+    <div class="krow">
+      <button class="btn" id="play">⏵︎ Reproducir</button>
+      <button class="btn ghost" id="resetT">⟲ Tiempo</button>
+      <button class="btn ghost" id="photo">📷 Modo foto</button>
     </div>
-    <div class="row"><label for="speed">Velocidad</label><div id="speedVal" class="val">1×</div></div>
-    <input id="speed" type="range" min="0.25" max="32" value="1" step="0.25" />
-    <label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input id="toggleOrbits" type="checkbox" checked /> Órbitas</label>
-    <label style="display:flex;align-items:center;gap:8px;margin-top:6px"><input id="toggleLabels" type="checkbox" checked /> Etiquetas</label>
-    <h2 style="margin:12px 0 8px;font-size:14px;color:var(--muted)">Cuerpos</h2>
+
+    <div class="row">
+      <label for="speed">Velocidad</label>
+      <div class="val" id="speedVal">1×</div>
+    </div>
+    <input id="speed" type="range" min="0.25" max="32" value="1" step="0.25" aria-label="Velocidad del tiempo" />
+
+    <label class="switch" title="Mostrar órbitas">
+      <span>Órbitas</span>
+      <input id="toggleOrbits" type="checkbox" checked />
+    </label>
+
+    <label class="switch" title="Mostrar etiquetas de planetas">
+      <span>Etiquetas</span>
+      <input id="toggleLabels" type="checkbox" checked />
+    </label>
+
+    <label class="switch" title="Cinturón de asteroides/Kuiper">
+      <span>Cinturones</span>
+      <input id="toggleBelts" type="checkbox" checked />
+    </label>
+
+    <div class="row" style="margin-top:10px">
+      <label for="zoom">Zoom</label>
+      <div class="val" id="zoomVal">—</div>
+    </div>
+    <input id="zoom" type="range" min="2" max="60" value="16" step="0.5" aria-label="Zoom de cámara" />
+
+    <h2 style="margin:14px 0 8px;font-size:14px;color:var(--muted);letter-spacing:.2px">Cuerpos</h2>
     <div class="list" id="list"></div>
   </aside>
 </div>
 
 <script>
+(function(){
+  // -------- Utilities --------
+  const TAU = Math.PI*2;
+  const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+  const lerp=(a,b,t)=>a+(b-a)*t; const ease=(t)=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+  const now=()=>performance.now()/1000;
+  const prefersReduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const toastEl = document.getElementById('toast');
+  function toast(msg, ms=2000){toastEl.textContent=msg;toastEl.style.display='block';clearTimeout(toastEl._t);toastEl._t=setTimeout(()=>toastEl.style.display='none',ms)}
 
+  // -------- Data (scaled/approx) --------
+  // Distances in AU compressed, radii in Earth radii compressed logarithmically
+  const bodies=[
+    {id:'sun',name:'Sol',color:'#ffd27a', r:109, dist:0, year:0, rot:25, tilt:7.25, ring:false},
+    {id:'mercury',name:'Mercurio',color:'#a8a8a8', r:0.383, dist:0.39, year:0.24, rot:58.6, tilt:0.03},
+    {id:'venus',name:'Venus',color:'#f5c97a', r:0.949, dist:0.72, year:0.62, rot:-243, tilt:177.4},
+    {id:'earth',name:'Tierra',color:'#7fc8ff', r:1, dist:1, year:1, rot:1, tilt:23.4},
+    {id:'mars',name:'Marte',color:'#ff9b6b', r:0.532, dist:1.52, year:1.88, rot:1.03, tilt:25.2},
+    {id:'jupiter',name:'Júpiter',color:'#f4d7a1', r:11.21, dist:5.2, year:11.86, rot:0.41, tilt:3.1},
+    {id:'saturn',name:'Saturno',color:'#f7e2ac', r:9.45, dist:9.58, year:29.46, rot:0.45, tilt:26.7, ring:true},
+    {id:'uranus',name:'Urano',color:'#a7f1ff', r:4.01, dist:19.2, year:84.01, rot:-0.72, tilt:97.8, ring:true},
+    {id:'neptune',name:'Neptuno',color:'#7fb7ff', r:3.88, dist:30.05, year:164.8, rot:0.67, tilt:28.3}
+  ];
+  // moons (subset)
+  const moons=[
+    {of:'earth', name:'Luna', r:0.27, dist:0.00257, year:0.0748, color:'#e0e0e0'},
+    {of:'jupiter', name:'Ío', r:0.286, dist:0.0028, year:0.0048, color:'#ffdca8'},
+    {of:'jupiter', name:'Europa', r:0.245, dist:0.0045, year:0.0097, color:'#d9e7ff'},
+    {of:'jupiter', name:'Ganímedes', r:0.413, dist:0.0072, year:0.0196, color:'#c8c6b8'},
+    {of:'saturn', name:'Titán', r:0.404, dist:0.0082, year:0.044, color:'#f0c58a'}
+  ];
+
+  // -------- Canvas / GL setup --------
+  const glc = document.getElementById('gl');
+  const oc = document.getElementById('orbits');
+  const ox = oc.getContext('2d');
+  const dpr = Math.min(2, window.devicePixelRatio||1);
+  function resize(){
+    const r=glc.getBoundingClientRect();
+    glc.width=r.width*dpr; glc.height=r.height*dpr; gl.viewport(0,0,glc.width,glc.height);
+    oc.width=r.width*dpr; oc.height=r.height*dpr; oc.style.width=r.width+'px'; oc.style.height=r.height+'px';
+  }
+  const gl = glc.getContext('webgl2', {antialias:true,preserveDrawingBuffer:false});
+  if(!gl){
+    document.body.innerHTML = '<div style="display:grid;place-items:center;height:100%;padding:32px;color:#c4d3ff;text-align:center">'+
+      '<div style="max-width:720px;background:#0b1022d0;border:1px solid #1a2246;border-radius:16px;padding:20px 24px">'+
+      '<h2>Tu navegador no soporta WebGL2</h2><p>Actívalo o usa un navegador moderno para ver esta visualización 3D. Mientras tanto, puedes leer este mensaje offline.</p></div></div>';
+    return;
+  }
+  window.addEventListener('resize', resize);
+
+  // -------- Shaders (raymarch spheres + simple PBR-ish) --------
+  const VSH=`#version 300 es\nprecision highp float;layout(location=0) in vec2 p;out vec2 v;void main(){v=p*0.5+0.5;gl_Position=vec4(p,0.,1.);} `;
+  const FSH=`#version 300 es
+  precision highp float;out vec4 o;in vec2 v;
+  uniform vec2 res; uniform float t; uniform float speed; uniform mat3 camR; uniform float camD; 
+  // body data limits
+  #define MAXB 9
+  struct Body{vec3 color; float rad; float dist; float year; float tilt; float rot; float ring;};
+  uniform Body bodies[MAXB];
+  // moons (limited)
+  #define MAXM 5
+  struct Moon{int host; vec3 color; float rad; float dist; float year;};
+  uniform Moon moons[MAXM];
+
+  // hash & noise
+  float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}  
+
+  // camera ray
+  vec3 camPos(){return vec3(0.,0.,camD);}  
+  vec3 rayDir(vec2 uv){
+    float fov=1.2; vec3 rd=normalize(vec3((uv*2.-1.)*vec2(res.x/res.y,1.)*fov,-1.));
+    return camR*rd;
   }
 
+  // rotate around Y
+  mat3 rotY(float a){float c=cos(a), s=sin(a);return mat3(c,0.,-s, 0.,1.,0., s,0.,c);} 
+  mat3 rotX(float a){float c=cos(a), s=sin(a);return mat3(1.,0.,0., 0.,c,-s, 0.,s,c);} 
 
+  // orbital position (elliptical-ish by minor scale)
+  vec3 planetPos(Body b){
+    float ang = t/(b.year+1e-6); // scaled
+    float e = 0.06; // common small eccentricity
+    float a=b.dist; float bminor=a*sqrt(1.-e*e);
+    vec3 p = vec3(a*cos(ang), 0., bminor*sin(ang));
+    // orbital tilt
+    p = rotX(radians(b.tilt))*p;
+    return p;
+  }
+
+  vec3 moonPos(Moon m, Body host){
+    float ang = t/(m.year+1e-6);
+    float r = m.dist*6.; // visually exaggerated
+    vec3 p = vec3(r*cos(ang), 0., r*sin(ang));
+    vec3 hp = planetPos(host);
+    return hp + rotX(radians(host.tilt))*p;
+  }
+
+  // signed distance functions
+  float sdSphere(vec3 p, float r){return length(p)-r;}
+  // Saturn/Urano rings: distance to thin disk
+  float sdRing(vec3 p, float r1, float r2, float h){float d=length(p.xz);float v=max(abs(p.y)-h, 0.);float rd=0.; if(d<r1) rd=r1-d; else if(d>r2) rd=d-r2; return max(v,rd);} 
+
+  // march scene
+  struct Hit{float d; int id; int kind;}; // kind: 0 sun/planet, 1 ring, 2 moon
+
+  float sceneSDF(vec3 p, out int sid, out int skind){
+    float d=1e9; sid=-1; skind=0;
+    // planets + sun
+    for(int i=0;i<MAXB;i++){
+      Body b=bodies[i];
+      vec3 bp = planetPos(b);
+      float r = max(0.02, log(1.0+b.rad)*0.09);
+      if(i==0) r = 0.22; // sun bigger
+      float di = sdSphere(p-bp, r);
+      if(di<d){d=di; sid=i; skind=0;}
+      // rings
+      if(b.ring>0.5){
+        vec3 rp = p-bp; rp = rotX(radians(b.tilt))*rp; // align to planetary plane
+        float dr = sdRing(rp, r*1.7, r*3.0, r*0.06);
+        if(dr<d){d=dr; sid=i; skind=1;}
+      }
+    }
+    // moons
+    for(int i=0;i<MAXM;i++){
+      Moon m=moons[i]; Body hb=bodies[m.host];
+      vec3 mp = moonPos(m, hb);
+      float r = max(0.015, log(1.0+m.rad)*0.05);
+      float di = sdSphere(p-mp, r);
+      if(di<d){d=di; sid=i; skind=2;}
+    }
+    return d;
+  }
+
+  vec3 getNormal(vec3 p){int sid,sk; float h=1e-3; vec2 k=vec2(1,-1); return normalize(
+    k.xyy*sceneSDF(p+k.xyy*h,sid,sk)+
+    k.yyx*sceneSDF(p+k.yyx*h,sid,sk)+
+    k.yxy*sceneSDF(p+k.yxy*h,sid,sk)+
+    k.xxx*sceneSDF(p+k.xxx*h,sid,sk));
+  }
+
+  vec3 bodyColor(int id, int kind, vec3 p){
+    if(kind==1){ // rings
+      Body b=bodies[id]; vec3 bp=planetPos(b); vec3 rp = p-bp; rp=rotX(radians(b.tilt))*rp; float d=length(rp.xz);
+      float band = smoothstep(0.,1.,fract(d*20.)); float alpha = smoothstep(0.,1.,sin(d*50.));
+      return mix(vec3(0.85,0.8,0.7), vec3(0.6,0.55,0.5), band*alpha);
+    }
+    if(kind==2){ Moon m=moons[id]; return m.color; }
+    Body b=bodies[id];
+    // fake bands/noise
+    vec3 bp=planetPos(b); vec3 x = p-bp; float lat = atan(x.y,length(x.xz));
+    float bands = 0.1*sin(lat*40. + float(id)*2.0 + t*0.5);
+    vec3 c = b.color + vec3(bands*0.1);
+    // atmosphere rim for some
+    float rim = smoothstep(0.7,1.0,abs(lat));
+    if(id==3||id==7||id==8) c += vec3(0.05,0.1,0.2)*rim; // earth/uranus/neptune bluish
+    return c;
+  }
+
+  vec3 toneMap(vec3 c){c = c/(c+vec3(1.)); return pow(c, vec3(1.0/1.6));}
+
+  void main(){
+    vec2 uv=v; vec3 ro = camPos(); vec3 rd = rayDir(uv);
+    // march
+    float tmin=0.0, tmax=200.0; float dO=0.; vec3 p; int hitId=-1; int hitKind=0; bool hit=false;
+    for(int i=0;i<180;i++){
+      p = ro + rd*dO; int sid; int sk; float d=sceneSDF(p,sid,sk); 
+      if(d<0.0008){hit=true; hitId=sid; hitKind=sk; break;} dO+=d; if(dO>tmax) break;
+    }
+
+    // background starfield
+    vec3 col = vec3(0.01,0.015,0.03);
+    float s = hash12(rd.xy*res+vec2(t*10.0));
+    col += pow(s,50.0)*0.6; // sparse stars
+
+    // sun light
+    vec3 sunP = planetPos(bodies[0]);
+
+    if(hit){
+      vec3 n = getNormal(p);
+      // lighting
+      vec3 l = normalize(sunP - p);
+      float dif = max(0.0, dot(n,l));
+      // soft shadow via cheap AO-like
+      float ao = clamp(0.5 + 0.5*hash12(p.xy),0.5,1.0);
+      vec3 base; 
+      if(hitKind==2) {
+        Moon m=moons[hitId]; base = m.color/255.0; }
+      base = bodyColor(hitId, hitKind, p);
+      // convert hex-ish pseudo to 0..1 when using standard vec3 values
+      if(all(greaterThan(base, vec3(1.0)))) base/=255.0;
+      vec3 diff = base * (0.15 + 1.2*dif) * ao;
+      // specular
+      vec3 vdir = normalize(ro - p); vec3 h = normalize(l+vdir); float spec = pow(max(0.0,dot(n,h)), 64.0);
+      // rim for atmospheres on some bodies
+      float rim = pow(1.0-max(0.0,dot(n,vdir)), 3.0);
+      if(hitKind==0 && (hitId==3||hitId==5||hitId==6||hitId==7||hitId==8)) diff += vec3(0.05,0.08,0.12)*rim;
+      col = diff + vec3(0.6)*spec;
+
+      // sunlight bloom-ish if close to sun
+      float sunInt = 1.1/length(p-sunP);
+      col += vec3(1.0,0.85,0.5)*pow(sunInt,2.0)*0.05;
+
+      // eclipse/shadow: cast towards sun
+      float shade=1.0; vec3 q=p; for(int i=0;i<48;i++){int sid;int sk; float d=sceneSDF(q+normalize(sunP-p)*0.02*float(i),sid,sk); if(d<0.002){shade=0.55;break;}}
+      col*=mix(0.9,1.0,shade);
+    }
+
+    // additive solar glow sprite at sun position (projected approximate)
+    vec3 sunDir = normalize(sunP - ro); float g = max(0.0, dot(rd, sunDir));
+    col += vec3(1.2,0.9,0.4) * pow(g, 500.0) * 2.0;
+
+    o = vec4(toneMap(col),1.0);
+  }
+  `;
+
+  function compile(gl, type, src){const sh=gl.createShader(type);gl.shaderSource(sh,src);gl.compileShader(sh);if(!gl.getShaderParameter(sh,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(sh));throw new Error('Shader compile error')}return sh}
+  function program(gl, vs, fs){const p=gl.createProgram();gl.attachShader(p,compile(gl,gl.VERTEX_SHADER,vs));gl.attachShader(p,compile(gl,gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));throw new Error('Program link error')}return p}
+
+  const prog = program(gl, VSH, FSH);
+  gl.useProgram(prog);
+  // fullscreen triangle
+  const quad = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1,-1, 3,-1, -1,3
+  ]), gl.STATIC_DRAW);
+  const loc=0; gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+
+  // uniforms
+  const u = {
+    res: gl.getUniformLocation(prog,'res'), t: gl.getUniformLocation(prog,'t'), speed: gl.getUniformLocation(prog,'speed'),
+    camR: gl.getUniformLocation(prog,'camR'), camD: gl.getUniformLocation(prog,'camD')
+  };
+  function uBody(i, field){return gl.getUniformLocation(prog,`bodies[${i}].${field}`)}
+  function uMoon(i, field){return gl.getUniformLocation(prog,`moons[${i}].${field}`)}
+
+  // upload bodies
+  const toRGB = (hex)=>{
+    const c=parseInt(hex.replace('#',''),16); return [((c>>16)&255)/255, ((c>>8)&255)/255, (c&255)/255];
+  }
+  bodies.forEach((b,i)=>{
+    gl.uniform3fv(uBody(i,'color'), toRGB(b.color));
+    gl.uniform1f(uBody(i,'rad'), b.r);
+    gl.uniform1f(uBody(i,'dist'), b.dist*4.0); // visual scale of AU
+    gl.uniform1f(uBody(i,'year'), Math.max(0.0001, b.year*0.7));
+    gl.uniform1f(uBody(i,'tilt'), b.tilt);
+    gl.uniform1f(uBody(i,'rot'), b.rot);
+    gl.uniform1f(uBody(i,'ring'), b.ring?1.0:0.0);
+  });
+  // map moon host index
+  function hostIndex(id){return bodies.findIndex(b=>b.id===id)}
+  moons.forEach((m,i)=>{
+    gl.uniform1i(uMoon(i,'host'), hostIndex(m.of));
+    gl.uniform3fv(uMoon(i,'color'), toRGB(m.color));
+    gl.uniform1f(uMoon(i,'rad'), m.r);
+    gl.uniform1f(uMoon(i,'dist'), m.dist*40.0);
+    gl.uniform1f(uMoon(i,'year'), Math.max(0.0001, m.year*4.0));
+  });
+
+  // camera (orbit)
+  let yaw=0.9, pitch=0.25, dist=16; let dragging=false, lx=0, ly=0; const zoom= document.getElementById('zoom');
+  function camMatrix(){
+    const cy=Math.cos(yaw), sy=Math.sin(yaw), cx=Math.cos(pitch), sx=Math.sin(pitch);
+    // simple yaw/pitch rotation matrix
+    return new Float32Array([
+      cy,      0, -sy,
+      sx*sy,  cx, sx*cy,
+      cx*sy, -sx, cx*cy
+    ]);
+  }
+
+  glc.addEventListener('wheel', e=>{dist=clamp(dist + Math.sign(e.deltaY)*0.8, 2, 60); zoom.value=dist; updateZoomLabel();});
+  glc.addEventListener('mousedown', e=>{dragging=true; lx=e.clientX; ly=e.clientY;});
+  window.addEventListener('mouseup', ()=>dragging=false);
+  window.addEventListener('mousemove', e=>{ if(!dragging)return; const k=0.005; yaw-= (e.clientX-lx)*k; pitch=clamp(pitch-(e.clientY-ly)*k,-1.2,1.2); lx=e.clientX; ly=e.clientY; });
+  glc.addEventListener('dblclick', ()=>{yaw=0.9; pitch=0.25; dist=16; zoom.value=dist; updateZoomLabel();});
+
+  // UI list
+  const list=document.getElementById('list');
+  const palette = { sun:'#ffd27a', mercury:'#c0c0c0', venus:'#f2c283', earth:'#7fc8ff', mars:'#ff9b6b', jupiter:'#e3cba1', saturn:'#f7e2ac', uranus:'#a7f1ff', neptune:'#7fb7ff' };
+  bodies.forEach((b,i)=>{
+    const el=document.createElement('div'); el.className='card';
+    el.innerHTML=`<div class="dot" style="background:${palette[b.id]||'#ccc'}"></div>
+      <div><div class="name">${b.name}</div><div class="meta">Dist ~${b.dist} UA · Año ~${b.year}</div></div>
+      <button class="btn ghost goto" data-i="${i}">Enfocar</button>`;
+    list.appendChild(el);
+  });
+  list.addEventListener('click', (e)=>{
+    const btn=e.target.closest('.goto'); if(!btn) return; const i=+btn.dataset.i; focusBody(i);
+  });
+
+  // focus animation
+  let focus = -1; let focusAnim=0; let focusStart={yaw, pitch, dist};
+  function focusBody(i){focus=i; focusAnim=0; focusStart={yaw, pitch, dist}; toast('Enfocando: '+bodies[i].name,1200)}
+
+  // keyboard
+  window.addEventListener('keydown', (e)=>{
+    if(e.key>='1'&&e.key<='9'){const idx=Math.min(bodies.length-1, (e.key.charCodeAt(0)-49)); focusBody(idx);} 
+    if(e.key==='f' || e.key==='F'){ if(focus<0) focusBody(3); else focusBody(focus);} 
+    if(e.key==='o' || e.key==='O'){togOrbits.checked=!togOrbits.checked}
+    if(e.key==='l' || e.key==='L'){togLabels.checked=!togLabels.checked}
+  });
+
+  // time controls
+  let playing=false; let t0=now(), tSim=0; let speed=1;
+  const playBtn=document.getElementById('play');
+  const speedR=document.getElementById('speed'); const speedVal=document.getElementById('speedVal');
+  const resetT=document.getElementById('resetT');
+  playBtn.onclick=()=>{playing=!playing; playBtn.textContent=playing?'⏸︎ Pausa':'⏵︎ Reproducir'}
+  resetT.onclick=()=>{tSim=0}
+  speedR.oninput=()=>{speed=+speedR.value; speedVal.textContent=speed.toFixed(2).replace(/\.00$/,'')+'×'}
+  speedVal.textContent='1×';
+
+  // toggles
+  const togOrbits=document.getElementById('toggleOrbits');
+  const togLabels=document.getElementById('toggleLabels');
+  const togBelts=document.getElementById('toggleBelts');
+  const photo=document.getElementById('photo'); let photoMode=false; photo.onclick=()=>{photoMode=!photoMode; document.getElementById('ui').style.display=photoMode?'none':'block'}
+  const zoomVal=document.getElementById('zoomVal'); function updateZoomLabel(){zoomVal.textContent=dist.toFixed(1)+'×'}; updateZoomLabel();
+  zoom.oninput=()=>{dist=+zoom.value; updateZoomLabel();}
+
+  // FPS
+  const fpsEl=document.getElementById('fps'); let fpsAcc=0, fpsCnt=0, fps=0, lastFpsT=now();
+
+  // Orbits drawing (2D overlay projection approximation)
+  function drawOrbits(camR, camD){
+    if(!togOrbits.checked){ox.clearRect(0,0,oc.width,oc.height); return;}
+    ox.setTransform(dpr,0,0,dpr,0,0); ox.clearRect(0,0,oc.width,oc.height);
+    ox.save();
+    const w=oc.width/dpr,h=oc.height/dpr; const cx=w/2, cy=h/2; 
+    function proj(p){ // very rough projection
+      const v=new Float32Array([p[0],p[1],p[2]]);
+      const x=v[0]*camR[0]+v[1]*camR[3]+v[2]*camR[6];
+      const y=v[0]*camR[1]+v[1]*camR[4]+v[2]*camR[7];
+      const z=v[0]*camR[2]+v[1]*camR[5]+v[2]*camR[8]+camD; // camera forward
+      const s = 500/(z+1e-3); return [cx + x*s, cy + y*s, z];
+    }
+    bodies.forEach((b,i)=>{
+      if(i===0) return; // skip sun
+      const a=b.dist*4.0; const e=0.06; const bminor=a*Math.sqrt(1-e*e); // scaled AU
+      // ellipse points
+      ox.beginPath();
+      for(let k=0;k<=64;k++){
+        const ang=k/64*TAU; let px=a*Math.cos(ang), pz=bminor*Math.sin(ang); let py=0;
+        // orbital tilt X
+        const c=Math.cos(b.tilt*Math.PI/180), s=Math.sin(b.tilt*Math.PI/180); const y=py*c - pz*s; const z=py*s + pz*c;
+        const P=proj([px,y,z]); if(k===0) ox.moveTo(P[0],P[1]); else ox.lineTo(P[0],P[1]);
+      }
+      ox.strokeStyle='rgba(137,160,255,0.35)'; ox.lineWidth=1; ox.stroke();
+    });
+    ox.restore();
+  }
+
+  // Labels (simple DOM overlay)
+  const overlay=document.getElementById('overlay');
+  const labelEls=bodies.map(b=>{const s=document.createElement('div'); s.textContent=b.name; s.style.position='absolute';s.style.fontSize='12px'; s.style.color='#cfe3ff'; s.style.textShadow='0 1px 2px #000'; s.style.transform='translate(-50%,-50%)'; s.style.pointerEvents='none'; overlay.appendChild(s); return s;});
+
+  function updateLabels(camR, camD){
+    overlay.style.display = togLabels.checked?'block':'none'; if(!togLabels.checked) return;
+    const r=glc.getBoundingClientRect(); const w=r.width, h=r.height; const cx=w/2, cy=h/2;
+    function proj(p){
+      const x=p[0]*camR[0]+p[1]*camR[3]+p[2]*camR[6];
+      const y=p[0]*camR[1]+p[1]*camR[4]+p[2]*camR[7];
+      const z=p[0]*camR[2]+p[1]*camR[5]+p[2]*camR[8]+camD; const s=500/(z+1e-3); return [cx + x*s/dpr, cy + y*s/dpr, z];
+    }
+    bodies.forEach((b,i)=>{
+      const ang=tSim/Math.max(0.0001,b.year*0.7); const e=0.06; const a=b.dist*4.0; const bmn=a*Math.sqrt(1-e*e); 
+      let px=a*Math.cos(ang), pz=bmn*Math.sin(ang), py=0; const c=Math.cos(b.tilt*Math.PI/180), s=Math.sin(b.tilt*Math.PI/180);
+      const y=py*c - pz*s; const z=py*s + pz*c; const P=proj([px,y,z]);
+      const el=labelEls[i]; el.style.left=P[0]+"px"; el.style.top=P[1]+"px"; el.style.opacity = (P[2]>1?1:0.2);
+    })
+  }
+
+  // Belts (points via overlay canvas for performance)
+  function drawBelts(camR, camD){ if(!togBelts.checked){return} /* already starfield in shader */ }
+
+  // main loop
+  let last=now();
+  function tick(){
+    const nt=now(); const dt=clamp(nt-last,0,0.05); last=nt;
+    if(playing) tSim += dt*speed;
+    // focus interpolation
+    if(focus>=0){
+      focusAnim = Math.min(1, focusAnim + dt*1.2);
+      // bring camera to a nice angle and distance based on body dist
+      const b=bodies[focus]; const targetYaw = Math.atan2(0, b.dist); const targetPitch=0.3; const targetDist = clamp( (b.dist*4.0)*0.65 + (Math.log(1+b.r)*2.0), 4, 50);
+      yaw = lerp(focusStart.yaw, targetYaw+0.8, ease(focusAnim));
+      pitch = lerp(focusStart.pinch||focusStart.pitch, targetPitch, ease(focusAnim));
+      dist = lerp(focusStart.dist, targetDist, ease(focusAnim)); zoom.value=dist; updateZoomLabel();
+      if(focusAnim>=1) focus=-1;
+    }
+
+    const cam = camMatrix();
+    gl.viewport(0,0,glc.width,glc.height);
+    gl.useProgram(prog);
+    gl.uniform2f(u.res, glc.width, glc.height);
+    gl.uniform1f(u.t, tSim);
+    gl.uniform1f(u.speed, speed);
+    gl.uniformMatrix3fv(u.camR,false,cam);
+    gl.uniform1f(u.camD, dist);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+
+    drawOrbits(cam, dist);
+    updateLabels(cam, dist);
+    drawBelts(cam, dist);
+
+    // FPS
+    fpsAcc += 1/dt; fpsCnt++; if(nt-lastFpsT>0.5){ fps = (fpsAcc/fpsCnt)|0; fpsEl.textContent = 'FPS: '+fps; fpsAcc=0; fpsCnt=0; lastFpsT=nt; }
+    requestAnimationFrame(tick);
+  }
+  resize(); tick();
+
+  // initial note
+  if(prefersReduced) toast('Reduce motion activo: los efectos se limitan para tu comodidad', 2500);
+})();
 </script>
 </body>
 </html>
