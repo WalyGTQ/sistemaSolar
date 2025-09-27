@@ -43,6 +43,11 @@
 
   .toast{position:absolute;top:12px;left:12px;background:#0b1022d0;border:1px solid #1a2246;border-radius:10px;padding:8px 12px;color:#c4d3ff;font-size:13px;display:none}
 
+  #photoExit{position:absolute;top:16px;right:16px;z-index:10;display:none}
+  .photo-mode #app{grid-template-columns:1fr 0}
+  .photo-mode #ui{opacity:0;pointer-events:none}
+  .photo-mode #photoExit{display:block}
+
   /* Orbits canvas */
   #orbits{position:absolute;inset:0;pointer-events:none}
 
@@ -57,6 +62,7 @@
     <canvas id="gl"></canvas>
     <canvas id="orbits"></canvas>
     <div id="overlay"></div>
+    <button id="photoExit" class="btn ghost" type="button" hidden>Mostrar controles</button>
     <div class="help">Arrastra para orbitar · Rueda para zoom · Doble click para reset · Teclas: 1–9 seleccionar, F enfocar, O órbitas, L etiquetas</div>
     <div class="fps" id="fps">FPS: —</div>
     <div class="toast" id="toast"></div>
@@ -107,6 +113,7 @@
 (function(){
   // -------- Utilities --------
   const TAU = Math.PI*2;
+  const tanHalfFov = 1.2; // debe coincidir con el usado en el shader
   const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
   const lerp=(a,b,t)=>a+(b-a)*t; const ease=(t)=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
   const now=()=>performance.now()/1000;
@@ -117,15 +124,15 @@
   // -------- Data (scaled/approx) --------
   // Distances in AU compressed, radii in Earth radii compressed logarithmically
   const bodies=[
-    {id:'sun',name:'Sol',color:'#ffd27a', r:109, dist:0, year:0, rot:25, tilt:7.25, ring:false},
-    {id:'mercury',name:'Mercurio',color:'#a8a8a8', r:0.383, dist:0.39, year:0.24, rot:58.6, tilt:0.03},
-    {id:'venus',name:'Venus',color:'#f5c97a', r:0.949, dist:0.72, year:0.62, rot:-243, tilt:177.4},
-    {id:'earth',name:'Tierra',color:'#7fc8ff', r:1, dist:1, year:1, rot:1, tilt:23.4},
-    {id:'mars',name:'Marte',color:'#ff9b6b', r:0.532, dist:1.52, year:1.88, rot:1.03, tilt:25.2},
-    {id:'jupiter',name:'Júpiter',color:'#f4d7a1', r:11.21, dist:5.2, year:11.86, rot:0.41, tilt:3.1},
-    {id:'saturn',name:'Saturno',color:'#f7e2ac', r:9.45, dist:9.58, year:29.46, rot:0.45, tilt:26.7, ring:true},
-    {id:'uranus',name:'Urano',color:'#a7f1ff', r:4.01, dist:19.2, year:84.01, rot:-0.72, tilt:97.8, ring:true},
-    {id:'neptune',name:'Neptuno',color:'#7fb7ff', r:3.88, dist:30.05, year:164.8, rot:0.67, tilt:28.3}
+    {id:'sun',name:'Sol',color:'#ffd27a', r:109, dist:0, year:0, rot:25, orbitTilt:0, axialTilt:7.25, ring:false},
+    {id:'mercury',name:'Mercurio',color:'#a8a8a8', r:0.383, dist:0.39, year:0.24, rot:58.6, orbitTilt:7.0, axialTilt:0.03},
+    {id:'venus',name:'Venus',color:'#f5c97a', r:0.949, dist:0.72, year:0.62, rot:-243, orbitTilt:3.4, axialTilt:177.4},
+    {id:'earth',name:'Tierra',color:'#7fc8ff', r:1, dist:1, year:1, rot:1, orbitTilt:0.0, axialTilt:23.4},
+    {id:'mars',name:'Marte',color:'#ff9b6b', r:0.532, dist:1.52, year:1.88, rot:1.03, orbitTilt:1.85, axialTilt:25.2},
+    {id:'jupiter',name:'Júpiter',color:'#f4d7a1', r:11.21, dist:5.2, year:11.86, rot:0.41, orbitTilt:1.3, axialTilt:3.1},
+    {id:'saturn',name:'Saturno',color:'#f7e2ac', r:9.45, dist:9.58, year:29.46, rot:0.45, orbitTilt:2.5, axialTilt:26.7, ring:true},
+    {id:'uranus',name:'Urano',color:'#a7f1ff', r:4.01, dist:19.2, year:84.01, rot:-0.72, orbitTilt:0.8, axialTilt:97.8, ring:true},
+    {id:'neptune',name:'Neptuno',color:'#7fb7ff', r:3.88, dist:30.05, year:164.8, rot:0.67, orbitTilt:1.8, axialTilt:28.3}
   ];
   // moons (subset)
   const moons=[
@@ -162,7 +169,7 @@
   uniform vec2 res; uniform float t; uniform float speed; uniform mat3 camR; uniform float camD; 
   // body data limits
   #define MAXB 9
-  struct Body{vec3 color; float rad; float dist; float year; float tilt; float rot; float ring;};
+  struct Body{vec3 color; float rad; float dist; float year; float orbitTilt; float axialTilt; float rot; float ring;};
   uniform Body bodies[MAXB];
   // moons (limited)
   #define MAXM 5
@@ -173,7 +180,7 @@
   float hash12(vec2 p){vec3 p3=fract(vec3(p.xyx)*.1031);p3+=dot(p3,p3.yzx+33.33);return fract((p3.x+p3.y)*p3.z);}  
 
   // camera ray
-  vec3 camPos(){return vec3(0.,0.,camD);}  
+  vec3 camPos(){return camR * vec3(0.,0.,camD);}
   vec3 rayDir(vec2 uv){
     float fov=1.2; vec3 rd=normalize(vec3((uv*2.-1.)*vec2(res.x/res.y,1.)*fov,-1.));
     return camR*rd;
@@ -189,8 +196,8 @@
     float e = 0.06; // common small eccentricity
     float a=b.dist; float bminor=a*sqrt(1.-e*e);
     vec3 p = vec3(a*cos(ang), 0., bminor*sin(ang));
-    // orbital tilt
-    p = rotX(radians(b.tilt))*p;
+    // orbital inclination
+    p = rotX(radians(b.orbitTilt))*p;
     return p;
   }
 
@@ -199,7 +206,8 @@
     float r = m.dist*6.; // visually exaggerated
     vec3 p = vec3(r*cos(ang), 0., r*sin(ang));
     vec3 hp = planetPos(host);
-    return hp + rotX(radians(host.tilt))*p;
+    // align moon plane with host axial tilt
+    return hp + rotX(radians(host.axialTilt))*p;
   }
 
   // signed distance functions
@@ -222,7 +230,7 @@
       if(di<d){d=di; sid=i; skind=0;}
       // rings
       if(b.ring>0.5){
-        vec3 rp = p-bp; rp = rotX(radians(b.tilt))*rp; // align to planetary plane
+        vec3 rp = p-bp; rp = rotX(radians(b.axialTilt))*rp; // align to planetary plane
         float dr = sdRing(rp, r*1.7, r*3.0, r*0.06);
         if(dr<d){d=dr; sid=i; skind=1;}
       }
@@ -247,7 +255,7 @@
 
   vec3 bodyColor(int id, int kind, vec3 p){
     if(kind==1){ // rings
-      Body b=bodies[id]; vec3 bp=planetPos(b); vec3 rp = p-bp; rp=rotX(radians(b.tilt))*rp; float d=length(rp.xz);
+      Body b=bodies[id]; vec3 bp=planetPos(b); vec3 rp = p-bp; rp=rotX(radians(b.axialTilt))*rp; float d=length(rp.xz);
       float band = smoothstep(0.,1.,fract(d*20.)); float alpha = smoothstep(0.,1.,sin(d*50.));
       return mix(vec3(0.85,0.8,0.7), vec3(0.6,0.55,0.5), band*alpha);
     }
@@ -275,9 +283,15 @@
     }
 
     // background starfield
-    vec3 col = vec3(0.01,0.015,0.03);
-    float s = hash12(rd.xy*res+vec2(t*10.0));
-    col += pow(s,50.0)*0.6; // sparse stars
+    vec3 col = vec3(0.008,0.012,0.024);
+    vec2 starSeed = rd.xy*res*1.8;
+    float s1 = hash12(starSeed);
+    float s2 = hash12(rd.yx*res*3.4 + 21.0);
+    float starA = smoothstep(0.992,1.0,s1);
+    float starB = smoothstep(0.9975,1.0,s2);
+    vec3 tint = mix(vec3(0.55,0.65,1.0), vec3(1.0,0.9,0.82), hash12(starSeed+3.7));
+    col += starA*0.35*tint;
+    col += starB*0.85*vec3(1.0,0.95,0.9);
 
     // sun light
     vec3 sunP = planetPos(bodies[0]);
@@ -349,7 +363,8 @@
     gl.uniform1f(uBody(i,'rad'), b.r);
     gl.uniform1f(uBody(i,'dist'), b.dist*4.0); // visual scale of AU
     gl.uniform1f(uBody(i,'year'), Math.max(0.0001, b.year*0.7));
-    gl.uniform1f(uBody(i,'tilt'), b.tilt);
+    gl.uniform1f(uBody(i,'orbitTilt'), b.orbitTilt||0);
+    gl.uniform1f(uBody(i,'axialTilt'), b.axialTilt||0);
     gl.uniform1f(uBody(i,'rot'), b.rot);
     gl.uniform1f(uBody(i,'ring'), b.ring?1.0:0.0);
   });
@@ -401,10 +416,12 @@
 
   // keyboard
   window.addEventListener('keydown', (e)=>{
-    if(e.key>='1'&&e.key<='9'){const idx=Math.min(bodies.length-1, (e.key.charCodeAt(0)-49)); focusBody(idx);} 
-    if(e.key==='f' || e.key==='F'){ if(focus<0) focusBody(3); else focusBody(focus);} 
+    if(e.key>='1'&&e.key<='9'){const idx=Math.min(bodies.length-1, (e.key.charCodeAt(0)-49)); focusBody(idx);}
+    if(e.key==='f' || e.key==='F'){ if(focus<0) focusBody(3); else focusBody(focus);}
     if(e.key==='o' || e.key==='O'){togOrbits.checked=!togOrbits.checked}
     if(e.key==='l' || e.key==='L'){togLabels.checked=!togLabels.checked}
+    if((e.key==='p' || e.key==='P') && !e.metaKey && !e.ctrlKey){setPhotoMode(!photoMode);}
+    if(e.key==='Escape' && photoMode){setPhotoMode(false);}
   });
 
   // time controls
@@ -421,7 +438,18 @@
   const togOrbits=document.getElementById('toggleOrbits');
   const togLabels=document.getElementById('toggleLabels');
   const togBelts=document.getElementById('toggleBelts');
-  const photo=document.getElementById('photo'); let photoMode=false; photo.onclick=()=>{photoMode=!photoMode; document.getElementById('ui').style.display=photoMode?'none':'block'}
+  const photo=document.getElementById('photo');
+  const photoExit=document.getElementById('photoExit');
+  let photoMode=false;
+  function setPhotoMode(on){
+    photoMode=on;
+    document.body.classList.toggle('photo-mode', on);
+    photo.textContent = on?'📷 Mostrar panel':'📷 Modo foto';
+    photoExit.hidden = !on;
+    if(on){toast('Modo foto activo. Pulsa Esc o «P» para volver.', 2600);}
+  }
+  photo.onclick=()=>setPhotoMode(!photoMode);
+  photoExit.onclick=()=>setPhotoMode(false);
   const zoomVal=document.getElementById('zoomVal'); function updateZoomLabel(){zoomVal.textContent=dist.toFixed(1)+'×'}; updateZoomLabel();
   zoom.oninput=()=>{dist=+zoom.value; updateZoomLabel();}
 
@@ -429,30 +457,45 @@
   const fpsEl=document.getElementById('fps'); let fpsAcc=0, fpsCnt=0, fps=0, lastFpsT=now();
 
   // Orbits drawing (2D overlay projection approximation)
-  function drawOrbits(camR, camD){
+  function projectPoint(p, cam, camPos, width, height){
+    if(width<=0||height<=0) return null;
+    const qx=p[0]-camPos[0], qy=p[1]-camPos[1], qz=p[2]-camPos[2];
+    const vx=qx*cam[0]+qy*cam[3]+qz*cam[6];
+    const vy=qx*cam[1]+qy*cam[4]+qz*cam[7];
+    const vz=qx*cam[2]+qy*cam[5]+qz*cam[8];
+    if(vz>=-0.1) return null;
+    const aspect=width/height;
+    const ndcX=(vx/-vz)/(tanHalfFov*aspect);
+    const ndcY=(vy/-vz)/tanHalfFov;
+    return [
+      (ndcX*0.5+0.5)*width,
+      (ndcY*0.5+0.5)*height,
+      -vz
+    ];
+  }
+
+  function drawOrbits(cam, camPos){
     if(!togOrbits.checked){ox.clearRect(0,0,oc.width,oc.height); return;}
     ox.setTransform(dpr,0,0,dpr,0,0); ox.clearRect(0,0,oc.width,oc.height);
     ox.save();
-    const w=oc.width/dpr,h=oc.height/dpr; const cx=w/2, cy=h/2; 
-    function proj(p){ // very rough projection
-      const v=new Float32Array([p[0],p[1],p[2]]);
-      const x=v[0]*camR[0]+v[1]*camR[3]+v[2]*camR[6];
-      const y=v[0]*camR[1]+v[1]*camR[4]+v[2]*camR[7];
-      const z=v[0]*camR[2]+v[1]*camR[5]+v[2]*camR[8]+camD; // camera forward
-      const s = 500/(z+1e-3); return [cx + x*s, cy + y*s, z];
-    }
+    const w=oc.width/dpr,h=oc.height/dpr;
     bodies.forEach((b,i)=>{
-      if(i===0) return; // skip sun
-      const a=b.dist*4.0; const e=0.06; const bminor=a*Math.sqrt(1-e*e); // scaled AU
-      // ellipse points
+      if(i===0) return;
+      const a=b.dist*4.0; const e=0.06; const bminor=a*Math.sqrt(1-e*e);
+      let started=false;
       ox.beginPath();
-      for(let k=0;k<=64;k++){
-        const ang=k/64*TAU; let px=a*Math.cos(ang), pz=bminor*Math.sin(ang); let py=0;
-        // orbital tilt X
-        const c=Math.cos(b.tilt*Math.PI/180), s=Math.sin(b.tilt*Math.PI/180); const y=py*c - pz*s; const z=py*s + pz*c;
-        const P=proj([px,y,z]); if(k===0) ox.moveTo(P[0],P[1]); else ox.lineTo(P[0],P[1]);
+      for(let k=0;k<=128;k++){
+        const ang=k/128*TAU; let px=a*Math.cos(ang), pz=bminor*Math.sin(ang); let py=0;
+        const c=Math.cos(b.orbitTilt*Math.PI/180), s=Math.sin(b.orbitTilt*Math.PI/180);
+        const y=py*c - pz*s; const z=py*s + pz*c;
+        const proj=projectPoint([px,y,z], cam, camPos, w, h);
+        if(!proj){started=false; continue;}
+        if(!started){ox.moveTo(proj[0],proj[1]); started=true;}
+        else{ox.lineTo(proj[0],proj[1]);}
       }
-      ox.strokeStyle='rgba(137,160,255,0.35)'; ox.lineWidth=1; ox.stroke();
+      if(started){
+        ox.strokeStyle='rgba(137,160,255,0.35)'; ox.lineWidth=1; ox.stroke();
+      }
     });
     ox.restore();
   }
@@ -461,24 +504,21 @@
   const overlay=document.getElementById('overlay');
   const labelEls=bodies.map(b=>{const s=document.createElement('div'); s.textContent=b.name; s.style.position='absolute';s.style.fontSize='12px'; s.style.color='#cfe3ff'; s.style.textShadow='0 1px 2px #000'; s.style.transform='translate(-50%,-50%)'; s.style.pointerEvents='none'; overlay.appendChild(s); return s;});
 
-  function updateLabels(camR, camD){
+  function updateLabels(cam, camPos){
     overlay.style.display = togLabels.checked?'block':'none'; if(!togLabels.checked) return;
-    const r=glc.getBoundingClientRect(); const w=r.width, h=r.height; const cx=w/2, cy=h/2;
-    function proj(p){
-      const x=p[0]*camR[0]+p[1]*camR[3]+p[2]*camR[6];
-      const y=p[0]*camR[1]+p[1]*camR[4]+p[2]*camR[7];
-      const z=p[0]*camR[2]+p[1]*camR[5]+p[2]*camR[8]+camD; const s=500/(z+1e-3); return [cx + x*s/dpr, cy + y*s/dpr, z];
-    }
+    const r=glc.getBoundingClientRect(); const w=r.width, h=r.height;
     bodies.forEach((b,i)=>{
-      const ang=tSim/Math.max(0.0001,b.year*0.7); const e=0.06; const a=b.dist*4.0; const bmn=a*Math.sqrt(1-e*e); 
-      let px=a*Math.cos(ang), pz=bmn*Math.sin(ang), py=0; const c=Math.cos(b.tilt*Math.PI/180), s=Math.sin(b.tilt*Math.PI/180);
-      const y=py*c - pz*s; const z=py*s + pz*c; const P=proj([px,y,z]);
-      const el=labelEls[i]; el.style.left=P[0]+"px"; el.style.top=P[1]+"px"; el.style.opacity = (P[2]>1?1:0.2);
+      const ang=tSim/Math.max(0.0001,b.year*0.7); const e=0.06; const a=b.dist*4.0; const bmn=a*Math.sqrt(1-e*e);
+      let px=a*Math.cos(ang), pz=bmn*Math.sin(ang), py=0; const c=Math.cos(b.orbitTilt*Math.PI/180), s=Math.sin(b.orbitTilt*Math.PI/180);
+      const y=py*c - pz*s; const z=py*s + pz*c; const proj=projectPoint([px,y,z], cam, camPos, w, h);
+      const el=labelEls[i];
+      if(!proj){el.style.opacity='0'; return;}
+      el.style.left=proj[0]+"px"; el.style.top=proj[1]+"px"; el.style.opacity = (proj[2]>1?1:0.2);
     })
   }
 
   // Belts (points via overlay canvas for performance)
-  function drawBelts(camR, camD){ if(!togBelts.checked){return} /* already starfield in shader */ }
+  function drawBelts(cam, camPos){ if(!togBelts.checked){return} /* reservado para efectos futuros */ }
 
   // main loop
   let last=now();
@@ -497,6 +537,7 @@
     }
 
     const cam = camMatrix();
+    const camPos=[cam[6]*dist, cam[7]*dist, cam[8]*dist];
     gl.viewport(0,0,glc.width,glc.height);
     gl.useProgram(prog);
     gl.uniform2f(u.res, glc.width, glc.height);
@@ -506,9 +547,9 @@
     gl.uniform1f(u.camD, dist);
     gl.drawArrays(gl.TRIANGLES,0,3);
 
-    drawOrbits(cam, dist);
-    updateLabels(cam, dist);
-    drawBelts(cam, dist);
+    drawOrbits(cam, camPos);
+    updateLabels(cam, camPos);
+    drawBelts(cam, camPos);
 
     // FPS
     fpsAcc += 1/dt; fpsCnt++; if(nt-lastFpsT>0.5){ fps = (fpsAcc/fpsCnt)|0; fpsEl.textContent = 'FPS: '+fps; fpsAcc=0; fpsCnt=0; lastFpsT=nt; }
