@@ -484,7 +484,17 @@
       const a=b.dist*4.0; const e=0.06; const bminor=a*Math.sqrt(1-e*e);
       let started=false;
       ox.beginPath();
-
+      for(let k=0;k<=128;k++){
+        const ang=k/128*TAU; let px=a*Math.cos(ang), pz=bminor*Math.sin(ang); let py=0;
+        const c=Math.cos(b.orbitTilt*Math.PI/180), s=Math.sin(b.orbitTilt*Math.PI/180);
+        const y=py*c - pz*s; const z=py*s + pz*c;
+        const proj=projectPoint([px,y,z], cam, camPos, w, h);
+        if(!proj){started=false; continue;}
+        if(!started){ox.moveTo(proj[0],proj[1]); started=true;}
+        else{ox.lineTo(proj[0],proj[1]);}
+      }
+      if(started){
+        ox.strokeStyle='rgba(137,160,255,0.35)'; ox.lineWidth=1; ox.stroke();
       }
     });
     ox.restore();
@@ -500,7 +510,10 @@
     bodies.forEach((b,i)=>{
       const ang=tSim/Math.max(0.0001,b.year*0.7); const e=0.06; const a=b.dist*4.0; const bmn=a*Math.sqrt(1-e*e);
       let px=a*Math.cos(ang), pz=bmn*Math.sin(ang), py=0; const c=Math.cos(b.orbitTilt*Math.PI/180), s=Math.sin(b.orbitTilt*Math.PI/180);
-
+      const y=py*c - pz*s; const z=py*s + pz*c; const proj=projectPoint([px,y,z], cam, camPos, w, h);
+      const el=labelEls[i];
+      if(!proj){el.style.opacity='0'; return;}
+      el.style.left=proj[0]+"px"; el.style.top=proj[1]+"px"; el.style.opacity = (proj[2]>1?1:0.2);
     })
   }
 
