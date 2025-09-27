@@ -3,34 +3,41 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sistema Solar 3D — Versión Online (CDNs)</title>
+  <title>Sistema Solar 3D — Versión Online (Canvas)</title>
   <style>
     :root{--bg:#070914;--panel:#0d1224d0;--text:#e9eef7;--muted:#9fb0cf;--ring:#89a0ff55}
-    *{box-sizing:border-box} html,body{height:100%;margin:0;background:radial-gradient(1000px 600px at 70% 30%,#0d1329 0%,#080b18 60%,#05060d 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:radial-gradient(1000px 600px at 70% 30%,#0d1329 0%,#080b18 60%,#05060d 100%);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial}
     #app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr) 320px}
     #ui{padding:14px;border-left:1px solid #1a2246;background:linear-gradient(180deg,var(--panel),#0b0f20);backdrop-filter:blur(6px) saturate(1.1);overflow:auto}
+    #scene{position:absolute;inset:0}
+    #scene canvas{display:block;width:100%;height:100%}
+    #labels{position:absolute;inset:0;pointer-events:none}
+    .label{position:absolute;color:#cfe3ff;font-size:12px;text-shadow:0 1px 2px #000;white-space:nowrap;transform:translate(-50%, -130%)}
     .btn{border:1px solid #24305d;background:#10162b;color:var(--text);padding:8px 10px;border-radius:12px;font-weight:600;cursor:pointer}
     .row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin:10px 0}
     .val{min-width:48px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
     .list{display:grid;gap:6px}
-    .card{background:#0b1022;border:1px solid #1a2246;border-radius:12px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center}
+    .card{background:#0b1022;border:1px solid #1a2246;border-radius:12px;padding:8px 10px;display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;transition:border-color 0.2s}
+    .card.focused{border-color:#2f4dff}
     .dot{width:10px;height:10px;border-radius:50%}
     .meta{font-size:11px;color:var(--muted)}
     #hud{position:absolute;left:12px;bottom:12px;color:#9fb0cf;font-size:12px}
     #fps{position:absolute;right:12px;bottom:12px;background:#0b1022;border:1px solid #1a2246;border-radius:10px;padding:6px 8px;font-variant-numeric:tabular-nums;font-size:12px}
+    canvas:focus{outline:2px solid #2f4dff}
   </style>
 </head>
 <body>
 <div id="app">
   <div style="position:relative">
-    <div id="scene" style="position:absolute;inset:0"></div>
-    <div id="labels" style="position:absolute;inset:0;pointer-events:none"></div>
+    <div id="scene"></div>
+    <div id="labels"></div>
     <div id="hud">Arrastra para orbitar · Rueda para zoom · Doble click para reset · Teclas: 1–9, F (enfocar)</div>
     <div id="fps">FPS: —</div>
   </div>
   <aside id="ui" aria-label="Panel de control">
-    <h1 style="margin:0 0 6px;font-size:18px">Sistema Solar 3D (Online)</h1>
-    <div class="meta" style="margin-bottom:8px">CDNs: three.js + CSS2DRenderer — código ligero</div>
+    <h1 style="margin:0 0 6px;font-size:18px">Sistema Solar 3D (Canvas)</h1>
+    <div class="meta" style="margin-bottom:8px">Versión sin dependencias externas — funciona sin conexión</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 6px">
       <button id="play" class="btn">⏵︎ Reproducir</button>
       <button id="resetT" class="btn">⟲ Tiempo</button>
@@ -45,176 +52,446 @@
   </aside>
 </div>
 
-<script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
-<script src="https://unpkg.com/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://unpkg.com/three@0.161.0/examples/js/renderers/CSS2DRenderer.js"></script>
 <script>
-// ----- Scene basics (no ES modules; uses global THREE) -----
-const container = document.getElementById('scene');
-const labelLayer = document.getElementById('labels');
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio||1));
-renderer.setSize(container.clientWidth, container.clientHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-container.appendChild(renderer.domElement);
+(() => {
+  const container = document.getElementById('scene');
+  const labelLayer = document.getElementById('labels');
+  const canvas = document.createElement('canvas');
+  canvas.tabIndex = 0;
+  container.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
 
-const labelRenderer = new THREE.CSS2DRenderer();
-labelRenderer.setSize(container.clientWidth, container.clientHeight);
-labelRenderer.domElement.style.position='absolute';
-labelRenderer.domElement.style.inset='0';
-labelRenderer.domElement.style.pointerEvents='none';
-labelLayer.appendChild(labelRenderer.domElement);
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
 
-const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x05070d, 0.015);
-
-const camera = new THREE.PerspectiveCamera(55, container.clientWidth/container.clientHeight, 0.1, 2000);
-camera.position.set(0, 6, 28);
-
-const controls = new THREE.OrbitControls(camera, renderer.domElement);
-controls.enableDamping=true; controls.dampingFactor=0.06; controls.minDistance=4; controls.maxDistance=120;
-renderer.domElement.addEventListener('dblclick', ()=>{camera.position.set(0,6,28); controls.target.set(0,0,0)});
-
-// Starfield
-const stars = new THREE.Points(
-  new THREE.BufferGeometry(),
-  new THREE.PointsMaterial({ size:0.04, color:0x9fb0cf, depthWrite:false })
-);
-(function makeStars(){
-  const N=4000; const pos=new Float32Array(N*3);
-  for(let i=0;i<N;i++){ const r=THREE.MathUtils.randFloat(100,400); const t=Math.random()*Math.PI*2; const p=Math.acos(THREE.MathUtils.randFloatSpread(2));
-    pos[i*3+0]=r*Math.sin(p)*Math.cos(t); pos[i*3+1]=r*Math.cos(p)*0.6; pos[i*3+2]=r*Math.sin(p)*Math.sin(t);
+  class Vec3 {
+    constructor(x=0,y=0,z=0){ this.x=x; this.y=y; this.z=z; }
+    set(x,y,z){ this.x=x; this.y=y; this.z=z; return this; }
+    copy(v){ this.x=v.x; this.y=v.y; this.z=v.z; return this; }
+    add(v){ this.x+=v.x; this.y+=v.y; this.z+=v.z; return this; }
+    sub(v){ this.x-=v.x; this.y-=v.y; this.z-=v.z; return this; }
+    multiplyScalar(s){ this.x*=s; this.y*=s; this.z*=s; return this; }
+    clone(){ return new Vec3(this.x,this.y,this.z); }
+    lerp(v,t){ this.x += (v.x-this.x)*t; this.y += (v.y-this.y)*t; this.z += (v.z-this.z)*t; return this; }
+    lerpVectors(a,b,t){ this.x=a.x+(b.x-a.x)*t; this.y=a.y+(b.y-a.y)*t; this.z=a.z+(b.z-a.z)*t; return this; }
   }
-  stars.geometry.setAttribute('position', new THREE.BufferAttribute(pos,3));
+
+  const palette = {
+    mercury:0xbfbfbf, venus:0xf5c97a, earth:0x7fc8ff, mars:0xff9b6b,
+    jupiter:0xf4d7a1, saturn:0xf7e2ac, uranus:0xa7f1ff, neptune:0x7fb7ff
+  };
+  const paletteHex = {
+    mercury:'#c0c0c0', venus:'#f2c283', earth:'#7fc8ff', mars:'#ff9b6b',
+    jupiter:'#e3cba1', saturn:'#f7e2ac', uranus:'#a7f1ff', neptune:'#7fb7ff'
+  };
+
+  const bodies = [
+    { id:'mercury', name:'Mercurio', r:0.38, dist:4.5, year:0.24 },
+    { id:'venus', name:'Venus', r:0.95, dist:6.5, year:0.62 },
+    { id:'earth', name:'Tierra', r:1.00, dist:8.5, year:1.00 },
+    { id:'mars', name:'Marte', r:0.53, dist:11.5, year:1.88 },
+    { id:'jupiter', name:'Júpiter', r:11.2, dist:17.5, year:11.86 },
+    { id:'saturn', name:'Saturno', r:9.45, dist:24.5, year:29.46, ring:true },
+    { id:'uranus', name:'Urano', r:4.01, dist:31.0, year:84.01, ring:true },
+    { id:'neptune', name:'Neptuno', r:3.88, dist:37.0, year:164.8 }
+  ].map(b => ({
+    ...b,
+    color: palette[b.id] || 0xcccccc,
+    radius: Math.max(0.22, Math.log(1+b.r)*0.7),
+    position: new Vec3(),
+    labelEl: (()=>{
+      const div=document.createElement('div');
+      div.className='label';
+      div.textContent=b.name;
+      labelLayer.appendChild(div);
+      return div;
+    })()
+  }));
+
+  const sunRadius = 2.4;
+
+  // UI wiring
+  const list=document.getElementById('list');
+  const cards=[];
+  bodies.forEach((b,i)=>{
+    const el=document.createElement('div'); el.className='card';
+    el.innerHTML=`<div class="dot" style="background:${paletteHex[b.id]||'#ccc'}"></div><div><div style="font-weight:700">${b.name}</div><div class="meta">Dist ~${b.dist} · Año ~${b.year}</div></div><button class="btn" data-i="${i}">Enfocar</button>`;
+    list.appendChild(el);
+    cards.push(el);
+  });
+  list.addEventListener('click', (e)=>{
+    const btn=e.target.closest('button[data-i]');
+    if(!btn) return;
+    focus(parseInt(btn.dataset.i,10));
+  });
+
+  const playBtn=document.getElementById('play');
+  const speedR=document.getElementById('speed');
+  const speedVal=document.getElementById('speedVal');
+  const resetT=document.getElementById('resetT');
+  const photo=document.getElementById('photo');
+  const togOrbits=document.getElementById('toggleOrbits');
+  const togLabels=document.getElementById('toggleLabels');
+  const uiPanel=document.getElementById('ui');
+
+  let playing=false; let tSim=0; let speed=1; let photoMode=false;
+  playBtn.onclick=()=>{ playing=!playing; playBtn.textContent=playing?'⏸︎ Pausa':'⏵︎ Reproducir'; };
+  resetT.onclick=()=>{ tSim=0; };
+  speedR.oninput=()=>{ speed=+speedR.value; speedVal.textContent=(speed%1===0?speed.toFixed(0):speed.toFixed(2))+'×'; };
+  photo.onclick=()=>{ photoMode=!photoMode; uiPanel.style.display=photoMode?'none':'block'; resize(); };
+
+  let showOrbits=true; let showLabels=true;
+  function updateToggles(){
+    showOrbits=togOrbits.checked;
+    showLabels=togLabels.checked;
+    bodies.forEach(b=>{ b.labelEl.style.display=showLabels?'block':'none'; });
+  }
+  updateToggles();
+  togOrbits.addEventListener('change', updateToggles);
+  togLabels.addEventListener('change', updateToggles);
+
+  // Camera + controls
+  const camera = {
+    target: new Vec3(0,0,0),
+    distance: 28,
+    yaw: 0.9,
+    pitch: 0.35,
+    minDistance: 4,
+    maxDistance: 120
+  };
+  const defaultCamera = {
+    target: new Vec3(0,0,0),
+    distance: 28,
+    yaw: 0.9,
+    pitch: 0.35
+  };
+  const camPos = new Vec3();
+  let cosYaw=0, sinYaw=0, cosPitch=0, sinPitch=0;
+  const fov = 55 * Math.PI/180;
+  let projectionScale = 1, halfW=1, halfH=1;
+
+  function updateCameraVectors(){
+    const cP=Math.cos(camera.pitch);
+    const sP=Math.sin(camera.pitch);
+    const cY=Math.cos(camera.yaw);
+    const sY=Math.sin(camera.yaw);
+    camPos.set(
+      camera.target.x + camera.distance * cP * Math.sin(camera.yaw),
+      camera.target.y + camera.distance * sP,
+      camera.target.z + camera.distance * cP * Math.cos(camera.yaw)
+    );
+    cosYaw=cY; sinYaw=sY; cosPitch=cP; sinPitch=sP;
+  }
+
+  function projectPoint(p){
+    const x=p.x-camPos.x;
+    const y=p.y-camPos.y;
+    const z=p.z-camPos.z;
+    const dx = cosYaw*x + sinYaw*z;
+    const dz = -sinYaw*x + cosYaw*z;
+    const dy = cosPitch*y - sinPitch*dz;
+    const dz2 = sinPitch*y + cosPitch*dz;
+    if(dz2 >= -0.3) return null;
+    const inv = 1/(-dz2);
+    return {
+      x: halfW + dx * projectionScale * inv,
+      y: halfH + dy * projectionScale * inv,
+      depth: -dz2,
+      scale: projectionScale * inv
+    };
+  }
+
+  function rotateVector(v){
+    const dx = cosYaw*v.x + sinYaw*v.z;
+    const dz = -sinYaw*v.x + cosYaw*v.z;
+    const dy = cosPitch*v.y - sinPitch*dz;
+    const dz2 = sinPitch*v.y + cosPitch*dz;
+    return { x:dx, y:dy, z:dz2 };
+  }
+
+  function resize(){
+    const r = container.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(r.width));
+    const height = Math.max(1, Math.floor(r.height));
+    if(canvas.width!==width || canvas.height!==height){
+      canvas.width = width;
+      canvas.height = height;
+    }
+    projectionScale = height / (2*Math.tan(fov/2));
+    halfW = width/2;
+    halfH = height/2;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  let dragging=false; let dragStart={x:0,y:0,yaw:0,pitch:0};
+  canvas.addEventListener('pointerdown', (e)=>{
+    dragging=true;
+    dragStart={x:e.clientX,y:e.clientY,yaw:camera.yaw,pitch:camera.pitch};
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', (e)=>{
+    if(!dragging) return;
+    const dx=e.clientX-dragStart.x;
+    const dy=e.clientY-dragStart.y;
+    camera.yaw = dragStart.yaw - dx*0.005;
+    camera.pitch = clamp(dragStart.pitch - dy*0.003, -1.2, 1.2);
+  });
+  const releasePointer=()=>{ dragging=false; };
+  canvas.addEventListener('pointerup', (e)=>{ releasePointer(); canvas.releasePointerCapture(e.pointerId); });
+  canvas.addEventListener('pointerleave', releasePointer);
+  canvas.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const factor = Math.exp(e.deltaY * 0.001);
+    camera.distance = clamp(camera.distance * factor, camera.minDistance, camera.maxDistance);
+  }, {passive:false});
+  canvas.addEventListener('dblclick', ()=>{
+    resetView();
+  });
+
+  function resetView(){
+    camera.target.copy(defaultCamera.target);
+    camera.distance = defaultCamera.distance;
+    camera.yaw = defaultCamera.yaw;
+    camera.pitch = defaultCamera.pitch;
+    currentFocus=-1;
+    focusTo.target.copy(camera.target);
+    focusTo.distance = camera.distance;
+    highlightFocus();
+  }
+
+  window.addEventListener('keydown',(e)=>{
+    if(e.target && (e.target.tagName==='INPUT' || e.target.tagName==='TEXTAREA')) return;
+    if(e.key>='1'&&e.key<='9'){ focus(Math.min(bodies.length-1, e.key.charCodeAt(0)-49)); }
+    if(e.key==='f'||e.key==='F'){ focus(currentFocus>=0?currentFocus:2); }
+  });
+
+  function planetPosition(b){
+    const ang = tSim / Math.max(0.0001, b.year*0.7) * Math.PI*2;
+    return new Vec3(Math.cos(ang)*b.dist, 0, Math.sin(ang)*b.dist);
+  }
+
+  const orbitSamples = new Array(160).fill(0).map((_,i)=>i/160*Math.PI*2);
+  const stars = (()=>{
+    const arr=[]; const N=2000;
+    for(let i=0;i<N;i++){
+      const r = 120 + Math.random()*280;
+      const theta = Math.random()*Math.PI*2;
+      const phi = Math.acos(Math.random()*2-1);
+      arr.push(new Vec3(
+        r*Math.sin(phi)*Math.cos(theta),
+        r*Math.cos(phi)*0.4,
+        r*Math.sin(phi)*Math.sin(theta)
+      ));
+    }
+    return arr;
+  })();
+
+  let currentFocus=-1; let focusT=1;
+  const focusFrom={target:new Vec3(), distance:camera.distance};
+  const focusTo={target:new Vec3(), distance:camera.distance};
+
+  function computeFocusDistance(body){
+    return clamp(body.dist*0.8 + Math.log(1+body.r)*2.0, 5, 70);
+  }
+
+  function highlightFocus(){
+    cards.forEach((card,idx)=>{
+      card.classList.toggle('focused', idx===currentFocus);
+    });
+  }
+
+  function focus(i){
+    const b=bodies[i];
+    if(!b) return;
+    currentFocus=i;
+    focusT=0;
+    focusFrom.target.copy(camera.target);
+    focusFrom.distance=camera.distance;
+    focusTo.target.copy(b.position);
+    focusTo.distance = computeFocusDistance(b);
+    highlightFocus();
+  }
+
+  const fpsEl=document.getElementById('fps');
+  let last=performance.now();
+  let acc=0, cnt=0, lastFPS=performance.now();
+
+  const sunPos = new Vec3(0,0,0);
+  const moonOffset = 1.2;
+  const tempVec = new Vec3();
+
+  function step(dt){
+    if(playing) tSim += dt*speed;
+
+    bodies.forEach(b=>{
+      b.position.copy(planetPosition(b));
+    });
+
+    if(currentFocus>=0){
+      const body=bodies[currentFocus];
+      focusTo.target.copy(body.position);
+      focusTo.distance = computeFocusDistance(body);
+      if(focusT<1){
+        focusT = Math.min(1, focusT + dt*1.5);
+        const ease = 1 - Math.pow(1-focusT,3);
+        camera.target.lerpVectors(focusFrom.target, focusTo.target, ease);
+        camera.distance = focusFrom.distance + (focusTo.distance - focusFrom.distance)*ease;
+      } else {
+        camera.target.lerp(focusTo.target, Math.min(1, dt*3));
+        camera.distance += (focusTo.distance - camera.distance)*Math.min(1, dt*3);
+      }
+    }
+
+    camera.distance = clamp(camera.distance, camera.minDistance, camera.maxDistance);
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    updateCameraVectors();
+
+    ctx.save();
+    ctx.globalCompositeOperation='source-over';
+
+    ctx.fillStyle='rgba(207,227,255,0.5)';
+    for(const s of stars){
+      const proj = projectPoint(s);
+      if(!proj) continue;
+      const size = Math.max(0.5, 1.5 - proj.depth*0.002);
+      ctx.beginPath();
+      ctx.arc(proj.x, proj.y, size, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    if(showOrbits){
+      ctx.strokeStyle='rgba(137,160,255,0.35)';
+      ctx.lineWidth=1;
+      bodies.forEach(b=>{
+        ctx.beginPath();
+        let started=false;
+        for(const ang of orbitSamples){
+          const pos = tempVec.set(Math.cos(ang)*b.dist, 0, Math.sin(ang)*b.dist);
+          const proj = projectPoint(pos);
+          if(!proj){ started=false; continue; }
+          if(!started){ ctx.moveTo(proj.x, proj.y); started=true; }
+          else ctx.lineTo(proj.x, proj.y);
+        }
+        ctx.closePath();
+        ctx.stroke();
+      });
+    }
+
+    const sunProj = projectPoint(sunPos);
+    if(sunProj){
+      const radiusPx = sunRadius * sunProj.scale;
+      const grad = ctx.createRadialGradient(sunProj.x - radiusPx*0.3, sunProj.y - radiusPx*0.3, radiusPx*0.2, sunProj.x, sunProj.y, radiusPx);
+      grad.addColorStop(0,'#ffe7a6');
+      grad.addColorStop(1,'#ff9f3b');
+      ctx.fillStyle=grad;
+      ctx.beginPath();
+      ctx.arc(sunProj.x, sunProj.y, radiusPx, 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    const renderList = bodies.map(b=>({body:b, proj:projectPoint(b.position)})).filter(x=>x.proj);
+    renderList.sort((a,b)=>b.proj.depth - a.proj.depth);
+
+    for(const entry of renderList){
+      const {body, proj} = entry;
+      const radiusPx = Math.max(1.5, body.radius * proj.scale);
+      const lightVec = rotateVector(new Vec3(-body.position.x, -body.position.y, -body.position.z));
+      const len = Math.max(0.0001, Math.hypot(lightVec.x, lightVec.y, lightVec.z));
+      const lx = lightVec.x/len;
+      const ly = lightVec.y/len;
+      const highlightX = proj.x + lx * radiusPx * 0.5;
+      const highlightY = proj.y + ly * radiusPx * 0.5;
+      const baseColor = body.color;
+      const r = (baseColor>>16)&255;
+      const g = (baseColor>>8)&255;
+      const bcol = baseColor&255;
+      const gradient = ctx.createRadialGradient(highlightX, highlightY, radiusPx*0.2, proj.x, proj.y, radiusPx);
+      gradient.addColorStop(0, `rgba(${Math.min(255,r+80)},${Math.min(255,g+80)},${Math.min(255,bcol+80)},1)`);
+      gradient.addColorStop(0.65, `rgba(${r},${g},${bcol},1)`);
+      gradient.addColorStop(1, `rgba(${Math.max(0,r-60)},${Math.max(0,g-60)},${Math.max(0,bcol-60)},1)`);
+      ctx.fillStyle=gradient;
+      ctx.beginPath();
+      ctx.arc(proj.x, proj.y, radiusPx, 0, Math.PI*2);
+      ctx.fill();
+
+      if(body.ring){
+        ctx.save();
+        ctx.beginPath();
+        const steps = 80;
+        let first=true;
+        for(let i=0;i<=steps;i++){
+          const ang = i/steps*Math.PI*2;
+          const px = body.position.x + Math.cos(ang)*body.radius*3.2;
+          const pz = body.position.z + Math.sin(ang)*body.radius*3.2;
+          const projOuter = projectPoint(tempVec.set(px, body.position.y, pz));
+          if(!projOuter){ first=true; continue; }
+          if(first){ ctx.moveTo(projOuter.x, projOuter.y); first=false; }
+          else ctx.lineTo(projOuter.x, projOuter.y);
+        }
+        ctx.closePath();
+        ctx.clip();
+        ctx.globalAlpha=0.55;
+        ctx.fillStyle='rgba(214,203,181,0.7)';
+        ctx.beginPath();
+        for(let i=0;i<=steps;i++){
+          const ang = i/steps*Math.PI*2;
+          const px = body.position.x + Math.cos(ang)*body.radius*3.2;
+          const pz = body.position.z + Math.sin(ang)*body.radius*3.2;
+          const projOuter = projectPoint(tempVec.set(px, body.position.y, pz));
+          if(!projOuter) continue;
+          if(i===0) ctx.moveTo(projOuter.x, projOuter.y);
+          else ctx.lineTo(projOuter.x, projOuter.y);
+        }
+        ctx.closePath();
+        ctx.fill('evenodd');
+        ctx.globalAlpha=1;
+        ctx.restore();
+      }
+
+      if(showLabels){
+        body.labelEl.style.transform = `translate(-50%, -130%) translate(${proj.x}px, ${proj.y}px)`;
+      }
+    }
+
+    const earth = bodies.find(b=>b.id==='earth');
+    if(earth){
+      const base = earth.position;
+      const ang = tSim*2.5;
+      tempVec.set(Math.cos(ang)*moonOffset, 0, Math.sin(ang)*moonOffset);
+      const moonWorld = new Vec3(base.x + tempVec.x, base.y + tempVec.y, base.z + tempVec.z);
+      const moonProj = projectPoint(moonWorld);
+      if(moonProj){
+        const radiusPx = Math.max(1, 0.17 * moonProj.scale);
+        ctx.fillStyle='rgba(222,222,222,1)';
+        ctx.beginPath();
+        ctx.arc(moonProj.x, moonProj.y, radiusPx, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  function loop(now){
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now-last)/1000);
+    last = now;
+    step(dt);
+    draw();
+    acc += 1/Math.max(1e-4, dt);
+    cnt++;
+    if(now-lastFPS>500){
+      fpsEl.textContent='FPS: '+((acc/cnt)|0);
+      acc=0; cnt=0; lastFPS=now;
+    }
+  }
+
+  resetView();
+  requestAnimationFrame(loop);
 })();
-scene.add(stars);
-
-// Sun (emissive) + light
-const sunGeo = new THREE.SphereGeometry(2.4, 48, 48); 
-const sunMat = new THREE.MeshBasicMaterial({ color:0xffd27a });
-const sun = new THREE.Mesh(sunGeo, sunMat); scene.add(sun);
-const sunLight = new THREE.PointLight(0xfff0c0, 2.6, 0, 2); sunLight.position.set(0,0,0); scene.add(sunLight);
-
-// Planet system (scaled, non-linear)
-const palette = { mercury:0xbfbfbf, venus:0xf5c97a, earth:0x7fc8ff, mars:0xff9b6b, jupiter:0xf4d7a1, saturn:0xf7e2ac, uranus:0xa7f1ff, neptune:0x7fb7ff };
-const bodies = [
-  { id:'mercury', name:'Mercurio', r:0.38, dist:4.5, year:0.24, tilt:0.03 },
-  { id:'venus', name:'Venus', r:0.95, dist:6.5, year:0.62, tilt:177.4 },
-  { id:'earth', name:'Tierra', r:1.00, dist:8.5, year:1.00, tilt:23.4 },
-  { id:'mars', name:'Marte', r:0.53, dist:11.5, year:1.88, tilt:25.2 },
-  { id:'jupiter', name:'Júpiter', r:11.2, dist:17.5, year:11.86, tilt:3.1 },
-  { id:'saturn', name:'Saturno', r:9.45, dist:24.5, year:29.46, tilt:26.7, ring:true },
-  { id:'uranus', name:'Urano', r:4.01, dist:31.0, year:84.01, tilt:97.8, ring:true },
-  { id:'neptune', name:'Neptuno', r:3.88, dist:37.0, year:164.8, tilt:28.3 }
-];
-
-const group = new THREE.Group(); scene.add(group);
-const orbits = new THREE.Group(); scene.add(orbits);
-const meshById = new Map();
-
-for(const b of bodies){
-  const radius = Math.max(0.22, Math.log(1+b.r)*0.7);
-  const geo = new THREE.SphereGeometry(radius, 32, 24);
-  const mat = new THREE.MeshStandardMaterial({ color: palette[b.id]||0xcccccc, roughness:0.6, metalness:0.0 });
-  const m = new THREE.Mesh(geo, mat); m.userData = { baseR: radius, body:b };
-  group.add(m); meshById.set(b.id, m);
-
-  // label
-  const div = document.createElement('div'); div.textContent=b.name; div.style.color='#cfe3ff'; div.style.fontSize='12px'; div.style.textShadow='0 1px 2px #000';
-  const lbl = new THREE.CSS2DObject(div); lbl.position.set(0, radius+0.6, 0); m.add(lbl); m.userData.label = lbl;
-
-  // orbit (circle)
-  const og = new THREE.BufferGeometry().setFromPoints(new THREE.Path().absarc(0,0, b.dist, 0, Math.PI*2, false).getSpacedPoints(200));
-  const ol = new THREE.LineLoop(og, new THREE.LineBasicMaterial({ color:0x89a0ff, transparent:true, opacity:0.35 }));
-  ol.rotation.x = THREE.MathUtils.degToRad(90);
-  orbits.add(ol); m.userData.orbitLine = ol;
-}
-
-// Saturn rings (simple disc)
-(function(){
-  const sat = meshById.get('saturn'); if(!sat) return; const ring = new THREE.Mesh(
-    new THREE.RingGeometry(sat.userData.baseR*1.7, sat.userData.baseR*3.0, 64, 1),
-    new THREE.MeshBasicMaterial({ color:0xd6cbb5, transparent:true, opacity:0.7, side:THREE.DoubleSide })
-  );
-  ring.rotation.x=THREE.MathUtils.degToRad(90);
-  sat.add(ring);
-})();
-
-// Moon (only Earth)
-const earth = meshById.get('earth');
-let moon; if(earth){
-  moon = new THREE.Mesh(new THREE.SphereGeometry(0.17, 24, 16), new THREE.MeshStandardMaterial({ color:0xdedede }));
-  earth.add(moon); moon.position.x = 1.2;
-}
-
-// ambient + subtle hemi
-scene.add(new THREE.AmbientLight(0x222a44, 0.7));
-const hemi = new THREE.HemisphereLight(0x334466, 0x0a0c18, 0.4); scene.add(hemi);
-
-// UI wiring
-const list=document.getElementById('list');
-const paletteHex = {mercury:'#c0c0c0', venus:'#f2c283', earth:'#7fc8ff', mars:'#ff9b6b', jupiter:'#e3cba1', saturn:'#f7e2ac', uranus:'#a7f1ff', neptune:'#7fb7ff'};
-
-bodies.forEach((b,i)=>{
-  const el=document.createElement('div'); el.className='card';
-  el.innerHTML=`<div class="dot" style="background:${paletteHex[b.id]||'#ccc'}"></div><div><div style="font-weight:700">${b.name}</div><div class="meta">Dist ~${b.dist} · Año ~${b.year}</div></div><button class="btn" data-i="${i}">Enfocar</button>`;
-  list.appendChild(el);
-});
-list.addEventListener('click', (e)=>{const btn=e.target.closest('button[data-i]'); if(!btn) return; focus(parseInt(btn.dataset.i,10));});
-
-const playBtn=document.getElementById('play');
-const speedR=document.getElementById('speed');
-const speedVal=document.getElementById('speedVal');
-const resetT=document.getElementById('resetT');
-const photo=document.getElementById('photo');
-const togOrbits=document.getElementById('toggleOrbits');
-const togLabels=document.getElementById('toggleLabels');
-
-let playing=false; let tSim=0; let speed=1; let photoMode=false;
-playBtn.onclick=()=>{playing=!playing; playBtn.textContent=playing?'⏸︎ Pausa':'⏵︎ Reproducir'};
-resetT.onclick=()=>{tSim=0};
-speedR.oninput=()=>{speed=+speedR.value; speedVal.textContent=(speed%1===0?speed.toFixed(0):speed.toFixed(2))+'×'};
-photo.onclick=()=>{photoMode=!photoMode; document.getElementById('ui').style.display=photoMode?'none':'block'};
-
-window.addEventListener('keydown',(e)=>{
-  if(e.key>='1'&&e.key<='9'){focus(Math.min(bodies.length-1, e.key.charCodeAt(0)-49));}
-  if(e.key==='f'||e.key==='F'){focus(currentFocus>=0?currentFocus:2);} // Earth default
-});
-
-// Focus logic
-let currentFocus=-1; let focusT=0; const focusFrom={pos:new THREE.Vector3(), target:new THREE.Vector3()}; const focusTo={pos:new THREE.Vector3(), target:new THREE.Vector3()};
-function planetPosition(b){ const ang = tSim / Math.max(0.0001, b.year*0.7) * Math.PI*2; return new THREE.Vector3(Math.cos(ang)*b.dist, 0, Math.sin(ang)*b.dist); }
-function focus(i){ currentFocus=i; focusT=0; focusFrom.pos.copy(camera.position); focusFrom.target.copy(controls.target);
-  const b=bodies[i]; const p=planetPosition(b); focusTo.target.copy(p);
-  const dist = THREE.MathUtils.clamp(b.dist*0.8 + Math.log(1+b.r)*2.0, 5, 70);
-  focusTo.pos.copy(p).add(new THREE.Vector3(dist*0.8, dist*0.32, dist*0.8));
-}
-
-function updateToggles(){ orbits.visible=togOrbits.checked; bodies.forEach(b=>{ const m=meshById.get(b.id); if(m) m.userData.label.element.style.display = togLabels.checked?'block':'none'; }); }
-updateToggles();
-[togOrbits,togLabels].forEach(x=>x.addEventListener('change',updateToggles));
-
-function onResize(){ const r=container.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); labelRenderer.setSize(r.width,r.height); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
-window.addEventListener('resize', onResize);
-onResize();
-
-// Animate
-const fpsEl=document.getElementById('fps'); let last=performance.now(), acc=0, cnt=0, lastFPS=performance.now();
-function animate(){
-  requestAnimationFrame(animate);
-  const now=performance.now(); const dt=Math.min(0.05, (now-last)/1000); last=now;
-  if(playing) tSim += dt*speed;
-
-  for(const b of bodies){ const m=meshById.get(b.id); const p=planetPosition(b); m.position.copy(p); m.rotation.y += 0.5*dt; }
-  if(moon && earth){ moon.rotation.y += 0.2*dt; moon.position.x = 1.2*Math.cos(tSim*2.5); moon.position.z = 1.2*Math.sin(tSim*2.5); }
-
-  controls.update();
-  renderer.render(scene,camera);
-  labelRenderer.render(scene,camera);
-
-  acc += 1/dt; cnt++; if(now-lastFPS>500){ fpsEl.textContent='FPS: '+((acc/cnt)|0); acc=0; cnt=0; lastFPS=now; }
-}
-animate();
 </script>
 </body>
 </html>
